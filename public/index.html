@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Meeting Notes Summarizer</title>
+  <style>
+    /* General Reset & Fonts */
+    body {
+      font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+      background: #f5f7fa;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      background: #2563eb;
+      color: white;
+      padding: 20px;
+      margin: 0 0 24px 0;
+      font-size: 1.8rem;
+    }
+
+    /* Layout */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 16px 40px;
+    }
+    .card {
+      background: #fff;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+    .row {
+      display: grid;
+      gap: 14px;
+    }
+
+    /* Inputs & Textarea */
+    textarea, input[type="text"], input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input:focus {
+      border-color: #2563eb;
+      outline: none;
+    }
+    textarea { min-height: 150px; }
+
+    /* Buttons */
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+
+    /* Status */
+    #status {
+      font-size: 0.9rem;
+      margin-top: 6px;
+      color: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI Meeting Notes Summarizer</h1>
+  <div class="container">
+
+    <!-- Upload / Transcript Section -->
+    <div class="card row">
+      <label><b>Upload Transcript (.txt)</b>
+        <input id="file" type="file" accept="text/plain" />
+      </label>
+      <label><b>Or paste transcript</b>
+        <textarea id="transcript" placeholder="Paste meeting transcript here..."></textarea>
+      </label>
+      <label><b>Custom instruction / prompt</b>
+        <input id="prompt" type="text" placeholder="e.g., Summarize in bullet points for executives" />
+      </label>
+      <button id="gen">⚡ Generate Summary</button>
+    </div>
+
+    <!-- Summary Output -->
+    <div class="card row">
+      <label><b>Generated Summary (editable)</b>
+        <textarea id="summary" placeholder="Summary will appear here..."></textarea>
+      </label>
+    </div>
+
+    <!-- Email Section -->
+    <div class="card row">
+      <label><b>Share via Email</b></label>
+      <input id="emails" type="text" placeholder="Comma-separated emails (e.g., a@x.com,b@y.com)" />
+      <input id="subject" type="text" placeholder="Subject (optional)" />
+      <button id="send">📩 Send Email</button>
+      <div id="status"></div>
+    </div>
+
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    $("file").addEventListener("change", async (e) => {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      const text = await f.text();
+      $("transcript").value = text;
+    });
+
+    $("gen").addEventListener("click", async () => {
+      const transcript = $("transcript").value.trim();
+      const prompt = $("prompt").value.trim();
+      if (!transcript) return alert("Transcript is required");
+
+      $("gen").disabled = true; $("gen").innerText = "⏳ Generating...";
+      try {
+        const r = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript, prompt })
+        });
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        $("summary").value = data.summary || "";
+      } catch (e) {
+        alert("Failed: " + e.message);
+      } finally {
+        $("gen").disabled = false; $("gen").innerText = "⚡ Generate Summary";
+      }
+    });
+
+    $("send").addEventListener("click", async () => {
+      const emails = $("emails").value.split(",").map(s => s.trim()).filter(Boolean);
+      const subject = $("subject").value || "Meeting Summary";
+      const html = `<pre style="font-family: inherit; white-space: pre-wrap;">${escapeHtml($("summary").value || "")}</pre>`;
+      if (emails.length === 0) return alert("Enter at least one email");
+
+      $("status").innerText = "📤 Sending...";
+      try {
+        const r = await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: emails, subject, html })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error || "Email failed");
+        $("status").innerText = "✅ Sent!";
+      } catch (e) {
+        $("status").innerText = "❌ Failed: " + e.message;
+      }
+    });
+
+    function escapeHtml(s) {
+      return s.replaceAll(/&/g, "&amp;")
+              .replaceAll(/</g, "&lt;")
+              .replaceAll(/>/g, "&gt;");
+    }
+  </script>
+</body>
+</html>
